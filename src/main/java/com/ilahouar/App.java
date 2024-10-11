@@ -5,6 +5,7 @@ import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.BucketExistsArgs;
 import io.minio.MakeBucketArgs;
+import io.minio.StatObjectArgs;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -66,21 +67,45 @@ public class App {
                 currentEnd = now;
             }
 
-            String apiUrlWithParams = generateApiUrlWithParams(currentStart, currentEnd);
-            String data = callApi(apiUrlWithParams);
-
-            // Save to MinIO
             String objectName = "airports_" + currentStart.toString() + ".json";
-            InputStream stream = new java.io.ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8));
-            minioClient.putObject(
-                    PutObjectArgs.builder()
-                            .bucket(MINIO_BUCKET)
-                            .object(objectName)
-                            .stream(stream, data.length(), -1)
-                            .contentType("application/json")
-                            .build()
-            );
-            logger.info("Data successfully retrieved and stored in MinIO as '{}'.", objectName);
+
+            // Check if the object already exists in MinIO
+            boolean objectExists = false;
+            try {
+                minioClient.statObject(
+                        StatObjectArgs.builder().bucket(MINIO_BUCKET).object(objectName).build()
+                );
+                objectExists = true;
+            } catch (Exception e) {
+                logger.info("Object '{}' does not exist in MinIO. Proceeding with API call.", objectName);
+            }
+
+            if (objectExists) {
+                logger.info("Data for '{}' already exists in MinIO. Skipping API call.", objectName);
+            } else {
+                String apiUrlWithParams = generateApiUrlWithParams(currentStart, currentEnd);
+                String data = callApi(apiUrlWithParams);
+
+                // Save to MinIO
+                InputStream stream = new java.io.ByteArrayInputStream(data.getBytes(StandardCharsets.UTF_8));
+                minioClient.putObject(
+                        PutObjectArgs.builder()
+                                .bucket(MINIO_BUCKET)
+                                .object(objectName)
+                                .stream(stream, data.length(), -1)
+                                .contentType("application/json")
+                                .build()
+                );
+                logger.info("Data successfully retrieved and stored in MinIO as '{}'.", objectName);
+            }
+
+            // Add a delay of 1 minute between API calls
+            try {
+                Thread.sleep(60 * 1000); // 1 minute in milliseconds
+            } catch (InterruptedException e) {
+                logger.error("Sleep interrupted: {}", e.getMessage());
+                Thread.currentThread().interrupt();
+            }
 
             currentStart = currentEnd;
         }
@@ -101,12 +126,22 @@ public class App {
         try (CloseableHttpClient client = HttpClients.createDefault()) {
             HttpGet request = new HttpGet(apiUrl);
             HttpResponse response = client.execute(request);
+            int statusCode = response.getStatusLine().getStatusCode();
             InputStream inputStream = response.getEntity().getContent();
+            String responseString = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
 
-            ObjectMapper mapper = new ObjectMapper();
-            JsonNode jsonNode = mapper.readTree(inputStream);
-
-            return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(jsonNode);
+            if (statusCode == 200) {
+                // Parse the response string as JSON
+                ObjectMapper mapper = new ObjectMapper();
+                JsonNode jsonNode = mapper.readTree(responseString);
+                return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(jsonNode);
+            } else {
+                logger.error("API returned non-200 status code: {}. Response: {}", statusCode, responseString);
+                throw new RuntimeException("API call failed with status code: " + statusCode);
+            }
+        } catch (Exception e) {
+            logger.error("Error calling API: {}", e.getMessage());
+            throw e;
         }
     }
 }
