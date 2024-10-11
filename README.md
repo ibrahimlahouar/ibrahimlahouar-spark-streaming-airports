@@ -30,18 +30,19 @@ L'**Airport Streaming App** est une application Java qui utilise Apache Spark St
 
 ### Étape 1: Cloner le dépôt
 
-bash
+```console
 git clone https://github.com/votre-utilisateur/airport-streaming-app.git
 cd airport-streaming-app
-
+```
 
 ### Étape 2: Configurer MinIO
 
 1. Téléchargez et installez MinIO depuis [leur site officiel](https://min.io/download).
 2. Démarrez le serveur MinIO:
 
+```console
 minio server /data
-
+```
 
 3. Configurez les identifiants d'accès (par défaut: `minioadmin:minioadmin`).
 
@@ -53,9 +54,10 @@ Assurez-vous que Spark est installé et configuré correctement. Vous pouvez té
 
 Compilez et exécutez l'application avec Maven ou votre IDE préféré. Assurez-vous de passer l'année de début en tant que paramètre système:
 
+```console
 mvn clean install
 java -Dapi.start.year=2024 -jar target/airport-streaming-app.jar
-
+```
 
 ### Étape 5: Vérifier les logs
 
